@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cybersecurity Awareness — Keystroke Logger (Demo)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <h1>🛡 Cybersecurity Awareness — Keystroke Logger (Demo)</h1>
+      <p class="subtitle">
+        This demo records keys you type <strong>on this page only</strong> with timestamps, after you click <em>Start</em>.
+        Data stays in your browser (localStorage). No uploads, no email.
+      </p>
+    </header>
+
+    <section class="consent card">
+      <label class="checkbox">
+        <input type="checkbox" id="consentBox" />
+        <span>I understand and consent to logging my keystrokes on this page for demonstration.</span>
+      </label>
+      <div class="controls">
+        <button id="startBtn" class="btn primary" disabled>Start</button>
+        <button id="stopBtn" class="btn" disabled>Stop</button>
+        <button id="clearBtn" class="btn danger">Clear Log</button>
+        <button id="exportBtn" class="btn">Export .txt</button>
+      </div>
+    </section>
+
+    <section class="stats card">
+      <div class="stat">
+        <div class="stat-label">Letters</div>
+        <div class="stat-value" id="lettersCount">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Words</div>
+        <div class="stat-value" id="wordsCount">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Entries</div>
+        <div class="stat-value" id="entriesCount">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Status</div>
+        <div class="stat-value" id="status">Idle</div>
+      </div>
+    </section>
+
+    <section class="log card">
+      <div class="log-header">
+        <h2>Captured Keystrokes</h2>
+        <input id="searchBox" class="search" type="text" placeholder="Filter by key or timestamp…" />
+      </div>
+      <div id="logList" class="log-list" aria-live="polite"></div>
+    </section>
+
+    <footer class="footer">
+      <small>
+        ⚠️ Educational demo only. Do not use without informed consent. Keystrokes are stored locally under the key
+        <code>keystrokeLog</code>.
+      </small>
+    </footer>
+  </main>
+
+  <script>
+    // ------- State -------
+    let logging = false;
+    const STORAGE_KEY = "keystrokeLog";
+    const STORAGE_TEXT = "keystrokeTextForCounts"; // for words/letters aggregation
+    const log = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const saveLog = (arr) => localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+    const getText = () => localStorage.getItem(STORAGE_TEXT) || "";
+    const saveText = (t) => localStorage.setItem(STORAGE_TEXT, t);
+
+    // ------- Elements -------
+    const consentBox = document.getElementById("consentBox");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const exportBtn = document.getElementById("exportBtn");
+    const lettersCount = document.getElementById("lettersCount");
+    const wordsCount = document.getElementById("wordsCount");
+    const entriesCount = document.getElementById("entriesCount");
+    const statusEl = document.getElementById("status");
+    const logList = document.getElementById("logList");
+    const searchBox = document.getElementById("searchBox");
+
+    // ------- Helpers -------
+    const nowStamp = () => {
+      const d = new Date();
+      // YYYY-MM-DD HH:MM:SS (local)
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    };
+
+    function humanKey(e) {
+      // Prefer single characters; fall back to bracketed key name for control keys
+      if (e.key && e.key.length === 1) return e.key;
+      // Map some common control keys nicely
+      const map = {
+        " ": "[Space]",
+        "Enter": "[Enter]",
+        "Backspace": "[Backspace]",
+        "Tab": "[Tab]",
+        "Shift": "[Shift]",
+        "Control": "[Ctrl]",
+        "Alt": "[Alt]",
+        "Meta": "[Meta]",
+        "ArrowUp": "[ArrowUp]",
+        "ArrowDown": "[ArrowDown]",
+        "ArrowLeft": "[ArrowLeft]",
+        "ArrowRight": "[ArrowRight]"
+      };
+      return map[e.key] || `[${e.key}]`;
+    }
+
+    function updateCounts() {
+      // Words/letters counted from the typed character stream we maintain
+      const text = getText();
+      const letters = (text.match(/[A-Za-z]/g) || []).length;
+      // Word heuristic: split on whitespace runs
+      const words = (text.trim() ? text.trim().split(/\s+/) : []).length;
+      const entries = log().length;
+      lettersCount.textContent = String(letters);
+      wordsCount.textContent = String(words);
+      entriesCount.textContent = String(entries);
+    }
+
+    function renderLog(filter = "") {
+      const entries = log();
+      const frag = document.createDocumentFragment();
+      logList.innerHTML = "";
+      const lower = filter.trim().toLowerCase();
+      for (const item of entries) {
+        const line = `${item.timestamp} : ${item.key}`;
+        if (lower && !line.toLowerCase().includes(lower)) continue;
+        const row = document.createElement("div");
+        row.className = "log-row";
+        row.textContent = line;
+        frag.appendChild(row);
+      }
+      logList.appendChild(frag);
+      updateCounts();
+    }
+
+    function setStatus(active) {
+      logging = active;
+      statusEl.textContent = active ? "Recording…" : "Idle";
+      startBtn.disabled = active || !consentBox.checked;
+      stopBtn.disabled = !active;
+    }
+
+    // ------- Event Handlers -------
+    consentBox.addEventListener("change", () => {
+      startBtn.disabled = !consentBox.checked || logging;
+    });
+
+    startBtn.addEventListener("click", () => {
+      if (!consentBox.checked) {
+        alert("Please provide consent to start logging.");
+        return;
+      }
+      setStatus(true);
+    });
+
+    stopBtn.addEventListener("click", () => {
+      setStatus(false);
+    });
+
+    clearBtn.addEventListener("click", () => {
+      if (!confirm("Clear all locally stored keystrokes and counters?")) return;
+      saveLog([]);
+      saveText("");
+      renderLog(searchBox.value);
+    });
+
+    exportBtn.addEventListener("click", () => {
+      const entries = log();
+      const lines = ["Keylogs with Timestamps"];
+      for (const item of entries) lines.push(`${item.timestamp} : ${item.key}`);
+      const blob = new Blob([lines.join("\n") + "\n"], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "keys.txt";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    searchBox.addEventListener("input", (e) => {
+      renderLog(e.target.value);
+    });
+
+    // Global keystroke capture (page-only, after consent + start)
+    window.addEventListener("keydown", (e) => {
+      if (!logging) return;
+
+      // Build entry
+      const entry = {
+        timestamp: nowStamp(),
+        key: humanKey(e),
+      };
+
+      // Save entry
+      const entries = log();
+      entries.push(entry);
+      saveLog(entries);
+
+      // Maintain a simple text stream for counts
+      let text = getText();
+      if (e.key.length === 1) {
+        // Append printable char
+        text += e.key;
+      } else if (e.key === "Backspace") {
+        // Remove last char if any
+        text = text.slice(0, -1);
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        text += " ";
+      } // ignore other control keys for count purposes
+
+      saveText(text);
+      renderLog(searchBox.value);
+    });
+
+    // ------- Init -------
+    // Ensure storage keys exist
+    if (!localStorage.getItem(STORAGE_KEY)) saveLog([]);
+    if (!localStorage.getItem(STORAGE_TEXT)) saveText("");
+    renderLog();
+    setStatus(false);
+  </script>
+</body>
+</html>
